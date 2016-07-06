@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Serilog;
+using Serilog.Events;
 
 namespace ConsoleApplication
 {
@@ -13,6 +15,15 @@ namespace ConsoleApplication
     {
         public static void Main(string[] args)
         {
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .Enrich.FromLogContext() // dynamically add and remove properties from the ambient "execution context"
+                .WriteTo.LiterateConsole()
+                .WriteTo.RollingFile(@"log-{Date}.txt", 
+                    fileSizeLimitBytes: 1024, 
+                    restrictedToMinimumLevel: LogEventLevel.Warning)
+                .CreateLogger();
+
             var host = new WebHostBuilder()
                 .UseKestrel()
                 .UseStartup<Startup>()
@@ -25,18 +36,24 @@ namespace ConsoleApplication
 	public class Startup
 	{		
 		public void ConfigureServices(IServiceCollection services)
-		{
+		{                        
+	        Log.Information("Configuring services");
+
 			// Add framework services.
 			services.AddMvc();
-
 			services.AddLogging();
 
 			// Add our repository type
 			services.AddSingleton<ITodoRepository, TodoRepository>();
 		}
 		
-		public void Configure(IApplicationBuilder app)
-		{
+		public void Configure(IApplicationBuilder app, ILoggerFactory loggerFactory)
+		{              
+            Log.Information("Configuring");
+
+            // https://github.com/serilog/serilog-extensions-logging
+            loggerFactory.AddSerilog(); // Add Serilog to the logging pipeline
+
 			/*
             app.Run(context =>
             {
