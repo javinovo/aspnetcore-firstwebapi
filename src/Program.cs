@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 
 namespace ConsoleApplication
 {
@@ -54,16 +56,46 @@ namespace ConsoleApplication
             // https://github.com/serilog/serilog-extensions-logging
             loggerFactory.AddSerilog(); // Add Serilog to the logging pipeline
 
-			/*
-            app.Run(context =>
-            {
-                return context.Response.WriteAsync("Hello from ASP.NET Core!");
-            });			
-			*/
-			app.UseMvcWithDefaultRoute();			
+            // Middleware: order matters => A > B > C > B > A
+
+            app.Use(AspNetCoreMiddleware); // A
+
+            app.UseOwin(builder => // B       
+                builder(next => 
+                    async env =>
+                    {
+                        Log.Information("Begin custom OWIN middleware handling");
+                        OwinMiddleware(env);
+                        await next.Invoke(env);
+                        Log.Information("End custom OWIN middleware handling");
+                    }));
+
+            /*
+            app.Run(context => // Terminates the pipeline (no next): C won't be executed, but B > A will
+                context.Response.WriteAsync("Hello from ASP.NET Core!")); // Same for any request
+            */
+
+	        app.UseMvcWithDefaultRoute(); // C
 		}
+
+        async Task AspNetCoreMiddleware(HttpContext ctx, Func<Task> next)
+        {
+            Log.Information("Begin custom ASP.NET Core middleware handling");
+            await next();
+            Log.Information("End custom ASP.NET Core middleware handling");
+        }
+
+        // OWIN's AppFunc returns Task, however we don't need async here 
+        void OwinMiddleware(IDictionary<string, object> environment)
+        {
+            // OWIN Environment Keys: http://owin.org/spec/spec/owin-1.0.0.html
+            var headersKey = "owin.RequestHeaders";
+            var headers = (IDictionary<string, string[]>) environment["owin.RequestHeaders"];
+            
+            Log.Information($"{headersKey}: {{HeaderNames}}", string.Join(", ", headers.Keys));
+        }
 	}
-	
+
     public class TodoItem
     {
         public string Key { get; set; }
